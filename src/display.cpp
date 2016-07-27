@@ -177,11 +177,8 @@ display::display(const display_context * dc, CVideo& video, boost::weak_ptr<wb::
 	scroll_event_("scrolled"),
 	complete_redraw_event_("completely_redrawn"),
 	nextDraw_(0),
-	reportRects_(),
 #ifdef SDL_GPU
 	reportImages_(),
-#else
-	reportSurfaces_(),
 #endif
 	reports_(),
 	menu_buttons_(),
@@ -2655,12 +2652,8 @@ void display::redraw_everything()
 		return;
 
 	invalidateGameStatus_ = true;
-
-	reportRects_.clear();
 #ifdef SDL_GPU
 	reportImages_.clear();
-#else
-	reportSurfaces_.clear();
 #endif
 	reports_.clear();
 
@@ -3315,7 +3308,7 @@ void display::refresh_report(std::string const &report_name, const config * new_
 #else
 	const theme::status_item *item = theme_.get_status_item(report_name);
 	if (!item) {
-		reportSurfaces_[report_name].assign(nullptr);
+		reports_[report_name].surf.assign(nullptr);
 		return;
 	}
 
@@ -3333,10 +3326,10 @@ void display::refresh_report(std::string const &report_name, const config * new_
 	if ( new_cfg == nullptr )
 		new_cfg = &generated_cfg;
 
-	SDL_Rect &rect = reportRects_[report_name];
+	SDL_Rect &rect = reports_[report_name].rect;
 	const SDL_Rect &new_rect = item->location(screen_area());
-	surface &surf = reportSurfaces_[report_name];
-	config &report = reports_[report_name];
+	surface &surf = reports_[report_name].surf;
+	config &report = reports_[report_name].data;
 
 	// Report and its location is unchanged since last time. Do nothing.
 	if (surf && rect == new_rect && report == *new_cfg) {
@@ -3345,6 +3338,20 @@ void display::refresh_report(std::string const &report_name, const config * new_
 
 	// Update the config in reports_.
 	report = *new_cfg;
+	reports_[report_name].status = report_status::generated;
+
+	// Refresh the surface.
+	refresh_report_surface(report_name);
+#endif
+}
+
+void display::refresh_report_surface(std::string const &report_name)
+{
+	const theme::status_item *item = theme_.get_status_item(report_name);
+	SDL_Rect &rect = reports_[report_name].rect;
+	const SDL_Rect &new_rect = item->location(screen_area());
+	surface &surf = reports_[report_name].surf;
+	config &report = reports_[report_name].data;
 
 	if (surf) {
 		sdl_blit(surf, nullptr, screen_.getSurface(), &rect);
@@ -3363,7 +3370,7 @@ void display::refresh_report(std::string const &report_name, const config * new_
 		// unless they are transparent, but that is done later).
 		if (rect.w > 0 && rect.h > 0) {
 			surf.assign(get_surface_portion(screen_.getSurface(), rect));
-			if (reportSurfaces_[report_name] == nullptr) {
+			if (reports_[report_name].surf == nullptr) {
 				ERR_DP << "Could not backup background for report!" << std::endl;
 			}
 		}
@@ -3400,7 +3407,7 @@ void display::refresh_report(std::string const &report_name, const config * new_
 	SDL_Rect ellipsis_area = rect;
 
 	for (config::const_child_itors elements = report.child_range("element");
-		 elements.first != elements.second; ++elements.first)
+		elements.first != elements.second; ++elements.first)
 	{
 		SDL_Rect area = sdl::create_rect(x, y, rect.w + rect.x - x, rect.h + rect.y - y);
 		if (area.h <= 0) break;
@@ -3459,7 +3466,8 @@ void display::refresh_report(std::string const &report_name, const config * new_
 				x = rect.x;
 				y += tallest;
 				tallest = 0;
-			} else {
+			}
+			else {
 				x += area.w;
 			}
 		}
@@ -3492,7 +3500,8 @@ void display::refresh_report(std::string const &report_name, const config * new_
 
 			if (!used_ellipsis) {
 				x += area.w;
-			} else {
+			}
+			else {
 				ellipsis_area = area;
 			}
 		}
@@ -3502,12 +3511,13 @@ void display::refresh_report(std::string const &report_name, const config * new_
 			continue;
 		}
 
-		skip_element:
+	skip_element:
 		t = (*elements.first)["tooltip"].t_str().base_str();
 		if (!t.empty()) {
 			if (!used_ellipsis) {
 				tooltips::add_tooltip(area, t, (*elements.first)["help"].t_str().base_str());
-			} else {
+			}
+			else {
 				// Collect all tooltips for the ellipsis.
 				// TODO: need a better separator
 				// TODO: assign an action
@@ -3522,7 +3532,6 @@ void display::refresh_report(std::string const &report_name, const config * new_
 	if (used_ellipsis) {
 		tooltips::add_tooltip(ellipsis_area, ellipsis_tooltip.str());
 	}
-#endif
 }
 
 void display::invalidate_all()

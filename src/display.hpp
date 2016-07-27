@@ -408,6 +408,8 @@ public:
 	void invalidate_theme() { panelsDrawn_ = false; }
 
 	void refresh_report(std::string const &report_name, const config * new_cfg=nullptr);
+	// Draws the report surface but doesn't regenerate the actual report
+	void refresh_report_surface(std::string const &report_name);
 
 	void draw_minimap_units();
 
@@ -659,6 +661,16 @@ private:
 	int blindfold_ctr_;
 
 protected:
+	enum class report_status { not_generated, generating, generated };
+
+	struct report_data
+	{
+		report_status status = report_status::not_generated;
+		SDL_Rect rect;
+		surface surf;
+		config data;
+	};
+
 	//TODO sort
 	const display_context * dc_;
 	boost::scoped_ptr<halo::manager> halo_man_;
@@ -805,14 +817,7 @@ protected:
 	 */
 	int nextDraw_;
 
-	// Not set by the initializer:
-	std::map<std::string, SDL_Rect> reportRects_;
-#ifdef SDL_GPU
-	std::map<std::string, sdl::timage> reportImages_;
-#else
-	std::map<std::string, surface> reportSurfaces_;
-#endif
-	std::map<std::string, config> reports_;
+	std::map<std::string, report_data> reports_;
 	std::vector<std::shared_ptr<gui::button>> menu_buttons_, action_buttons_;
 	std::vector<std::shared_ptr<gui::zoom_slider>> sliders_;
 	std::set<map_location> invalidated_;
