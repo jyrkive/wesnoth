@@ -522,6 +522,26 @@ theme::status_item::status_item(const config& cfg) :
 	}
 }
 
+void theme::status_item::add_prefix(config& report) const
+{
+	if (!prefix().empty())
+	{
+		config& e = report.add_child_at("element", config(), 0);
+		e["text"] = prefix();
+		e["tooltip"] = report.child("element")["tooltip"];
+	}
+}
+
+void theme::status_item::add_postfix(config& report) const
+{
+	if (!postfix().empty())
+	{
+		config& e = report.add_child("element");
+		e["text"] = postfix();
+		e["tooltip"] = report.child("element", -1)["tooltip"];
+	}
+}
+
 theme::panel::panel(const config& cfg) : object(cfg), image_(cfg["image"])
 {}
 

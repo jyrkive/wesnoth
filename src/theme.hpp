@@ -140,6 +140,9 @@ public:
 
 		using object::location;
 
+		void add_prefix(config& report) const;
+		void add_postfix(config& report) const;
+
 		const std::string& prefix() const { return prefix_; }
 		const std::string& postfix() const { return postfix_; }
 

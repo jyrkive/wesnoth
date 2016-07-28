@@ -56,6 +56,7 @@ namespace wb {
 #include "key.hpp"
 #include "team.hpp"
 #include "time_of_day.hpp"
+#include "reports.hpp"
 #include "sdl/rect.hpp"
 #include "sdl/image.hpp"
 #include "theme.hpp"
@@ -666,6 +667,7 @@ protected:
 	struct report_data
 	{
 		report_status status = report_status::not_generated;
+		bool is_empty;
 		SDL_Rect rect;
 		surface surf;
 		config data;
@@ -1169,6 +1171,9 @@ private:
 	tod_color color_adjust_;
 
 	bool dirty_;
+
+	reports::context obtain_report_context();
+	static void trigger_sidebar_redraw();
 
 #ifdef SDL_GPU
 	bool update_panel_image_;

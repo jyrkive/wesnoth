@@ -93,36 +93,51 @@ static std::string flush(std::ostringstream &s)
 typedef std::map<std::string, reports::generator_function> static_report_generators;
 static static_report_generators static_generators;
 
+static std::map<std::string, reports::generator_function_async> asynchronous_generators;
+
 struct report_generator_helper
 {
 	report_generator_helper(const char *name, reports::generator_function g)
 	{
-		static_generators.insert(static_report_generators::value_type(name, g));
+		static_generators.emplace(name, g);
+	}
+};
+
+struct asynchronous_report_generator_helper
+{
+	asynchronous_report_generator_helper(const char *name, reports::generator_function_async g)
+	{
+		asynchronous_generators.emplace(name, g);
 	}
 };
 
 #define REPORT_GENERATOR(n, cn) \
-	static config report_##n(reports::context & cn); \
+	static config report_##n(const reports::context & cn); \
 	static report_generator_helper reg_gen_##n(#n, &report_##n); \
-	static config report_##n(reports::context & cn)
+	static config report_##n(const reports::context & cn)
+
+#define REPORT_GENERATOR_ASYNC(n, cn) \
+	static boost::future<config> report_##n(const reports::context & cn); \
+	static asynchronous_report_generator_helper reg_gen_##n(#n, &report_##n); \
+	static boost::future<config> report_##n(const reports::context & cn)
 
 static char const *naps = "</span>";
 
-static const unit *get_visible_unit(reports::context & rc)
+static const unit *get_visible_unit(const reports::context & rc)
 {
 	return rc.dc().get_visible_unit(rc.screen().displayed_unit_hex(),
 		rc.teams()[rc.screen().viewing_team()],
 		rc.screen().show_everything());
 }
 
-static const unit *get_selected_unit(reports::context & rc)
+static const unit *get_selected_unit(const reports::context & rc)
 {
 	return rc.dc().get_visible_unit(rc.screen().selected_hex(),
 		rc.teams()[rc.screen().viewing_team()],
 		rc.screen().show_everything());
 }
 
-static config gray_inactive(reports::context & rc, const std::string &str)
+static config gray_inactive(const reports::context & rc, const std::string &str)
 {
 	if ( rc.screen().viewing_side() == rc.screen().playing_side() )
 			return text_report(str);
@@ -198,7 +213,7 @@ REPORT_GENERATOR(selected_unit_race, rc)
 	return unit_race(u);
 }
 
-static config unit_side(reports::context & rc, const unit* u)
+static config unit_side(const reports::context & rc, const unit* u)
 {
 	if (!u) return config();
 
@@ -296,7 +311,7 @@ REPORT_GENERATOR(selected_unit_traits, rc)
 	return unit_traits(u);
 }
 
-static config unit_status(reports::context & rc, const unit* u)
+static config unit_status(const reports::context & rc, const unit* u)
 {
 	if (!u) return config();
 	config res;
@@ -330,7 +345,7 @@ REPORT_GENERATOR(selected_unit_status, rc)
 	return unit_status(rc, u);
 }
 
-static config unit_alignment(reports::context & rc, const unit* u)
+static config unit_alignment(const reports::context & rc, const unit* u)
 {
 	if (!u) return config();
 	std::ostringstream str, tooltip;
@@ -408,7 +423,7 @@ REPORT_GENERATOR(selected_unit_abilities, rc)
 }
 
 
-static config unit_hp(reports::context& rc, const unit* u)
+static config unit_hp(const reports::context& rc, const unit* u)
 {
 	if (!u) return config();
 	std::ostringstream str, tooltip;
@@ -504,7 +519,7 @@ REPORT_GENERATOR(selected_unit_advancement_options, rc)
 	return unit_advancement_options(u);
 }
 
-static config unit_defense(reports::context & rc, const unit* u, const map_location& displayed_unit_hex)
+static config unit_defense(const reports::context & rc, const unit* u, const map_location& displayed_unit_hex)
 {
 	if(!u) {
 		return config();
@@ -579,7 +594,7 @@ REPORT_GENERATOR(selected_unit_vision, rc)
 	return unit_vision(u);
 }
 
-static config unit_moves(reports::context & rc, const unit* u)
+static config unit_moves(const reports::context & rc, const unit* u)
 {
 	if (!u) return config();
 	std::ostringstream str, tooltip;
@@ -646,7 +661,7 @@ REPORT_GENERATOR(selected_unit_moves, rc)
 	return unit_moves(rc, u);
 }
 
-static int attack_info(reports::context & rc, const attack_type &at, config &res, const unit &u, const map_location &displayed_unit_hex)
+static int attack_info(const reports::context & rc, const attack_type &at, config &res, const unit &u, const map_location &displayed_unit_hex)
 {
 	std::ostringstream str, tooltip;
 
@@ -852,15 +867,13 @@ static void format_hp(char str_buf[10], int hp)
 	str_buf[9] = '\0';  //prevents _snprintf error
 }
 
-static config unit_weapons(reports::context & rc, const unit *attacker, const map_location &attacker_pos, const unit *defender, bool show_attacker)
+static boost::future<config> unit_weapons(const reports::context & rc, const unit *attacker, const map_location &attacker_pos, const unit *defender, bool show_attacker)
 {
-	if (!attacker || !defender) return config();
+	if (!attacker || !defender) return boost::make_ready_future(config());
 
+	config res;
 	const unit* u = show_attacker ? attacker : defender;
 	const map_location unit_loc = show_attacker ? attacker_pos : defender->get_location();
-
-	std::ostringstream str, tooltip;
-	config res;
 
 	std::vector<battle_context> weapons;
 	for (unsigned int i = 0; i < attacker->attacks().size(); i++) {
@@ -871,15 +884,15 @@ static config unit_weapons(reports::context & rc, const unit *attacker, const ma
 		}
 	}
 
-	for (const battle_context& weapon : weapons) {
+	std::vector<std::string> labels(attacker->attacks().size());
+	std::vector<std::string> tooltips(attacker->attacks().size());
 
-		// Predict the battle outcome.
-		combatant attacker_combatant(weapon.get_attacker_stats());
-		combatant defender_combatant(weapon.get_defender_stats());
-		attacker_combatant.fight(defender_combatant);
+	for (unsigned int i = 0; i < weapons.size(); ++i)
+	{
+		std::ostringstream str, tooltip;
 
 		const battle_context_unit_stats& context_unit_stats =
-				show_attacker ? weapon.get_attacker_stats() : weapon.get_defender_stats();
+			show_attacker ? weapons[i].get_attacker_stats() : weapons[i].get_defender_stats();
 
 		int total_damage = 0;
 		int base_damage = 0;
@@ -889,17 +902,21 @@ static config unit_weapons(reports::context & rc, const unit *attacker, const ma
 
 		SDL_Color dmg_color = font::weapon_color;
 		if (context_unit_stats.weapon) {
+			/* Problem: attack_info() adds attack-specific information to res right here.
+			This way attack_info() adds information about all the weapons before the other code
+			adds information about any of them. */
 			base_damage = attack_info(rc, *context_unit_stats.weapon, res, *u, unit_loc);
 			total_damage = context_unit_stats.damage;
 			num_blows = context_unit_stats.num_blows;
 			chance_to_hit = context_unit_stats.chance_to_hit;
 			weapon_name = context_unit_stats.weapon->name();
 
-			if ( total_damage > base_damage )
+			if (total_damage > base_damage)
 				dmg_color = font::good_dmg_color;
-			else if ( total_damage < base_damage )
+			else if (total_damage < base_damage)
 				dmg_color = font::bad_dmg_color;
-		} else {
+		}
+		else {
 			str << span_color(font::weapon_color) << weapon_name << naps << "\n";
 			tooltip << _("Weapon: ") << "<b>" << weapon_name << "</b>\n"
 				<< _("Damage: ") << "<b>" << "0" << "</b>\n";
@@ -914,73 +931,94 @@ static config unit_weapons(reports::context & rc, const unit *attacker, const ma
 			<< naps << "\n";
 
 		tooltip << _("Weapon: ") << "<b>" << weapon_name << "</b>\n"
-				<< _("Total damage") << "<b>" << total_damage << "</b>\n";
+			    << _("Total damage") << "<b>" << total_damage << "</b>\n";
 
-		// Create the hitpoints distribution.
-		std::vector<std::pair<int, double> > hp_prob_vector;
+		labels[i] = flush(str);
+		tooltips[i] = flush(tooltip);
+	}
 
-		// First, we sort the probabilities in ascending order.
-		std::vector<std::pair<double, int> > prob_hp_vector;
-		int i;
+	// Let's copy the unit in case something happens when the attack prediction is being calculated.
+	const unit u_copy(*u);
 
-		combatant* c = show_attacker ? &attacker_combatant : &defender_combatant;
+	return boost::async(boost::launch::async,
+		[weapons, show_attacker, labels, tooltips, res, u_copy]() mutable -> config
+	{
+		for (unsigned int i = 0; i < weapons.size(); ++i) {
+			const battle_context& weapon = weapons[i];
 
-		for(i = 0; i < static_cast<int>(c->hp_dist.size()); i++) {
-			double prob = c->hp_dist[i];
+			// Predict the battle outcome.
+			combatant attacker_combatant(weapon.get_attacker_stats());
+			combatant defender_combatant(weapon.get_defender_stats());
+			attacker_combatant.fight(defender_combatant);
 
-			// We keep only values above 0.1%.
-			if(prob > 0.001)
-				prob_hp_vector.push_back(std::pair<double, int>(prob, i));
-		}
+			// Create the hitpoints distribution.
+			std::vector<std::pair<int, double> > hp_prob_vector;
 
-		std::sort(prob_hp_vector.begin(), prob_hp_vector.end());
+			// First, we sort the probabilities in ascending order.
+			std::vector<std::pair<double, int> > prob_hp_vector;
 
-		//TODO fendrin -- make that dynamically
-		int max_hp_distrib_rows_ = 10;
+			combatant* c = show_attacker ? &attacker_combatant : &defender_combatant;
 
-		// We store a few of the highest probability hitpoint values.
-		int nb_elem = std::min<int>(max_hp_distrib_rows_, prob_hp_vector.size());
+			for (int j = 0; j < static_cast<int>(c->hp_dist.size()); ++j) {
+				double prob = c->hp_dist[j];
 
-		for(i = prob_hp_vector.size() - nb_elem;
-				i < static_cast<int>(prob_hp_vector.size()); i++) {
+				// We keep only values above 0.1%.
+				if (prob > 0.001)
+					prob_hp_vector.push_back(std::pair<double, int>(prob, j));
+			}
 
-			hp_prob_vector.push_back(std::pair<int, double>
-			(prob_hp_vector[i].second, prob_hp_vector[i].first));
-		}
+			std::sort(prob_hp_vector.begin(), prob_hp_vector.end());
 
-		// Then, we sort the hitpoint values in ascending order.
-		std::sort(hp_prob_vector.begin(), hp_prob_vector.end());
-		// And reverse the order. Might be doable in a better manor.
-		std::reverse(hp_prob_vector.begin(), hp_prob_vector.end());
+			//TODO fendrin -- make that dynamically
+			int max_hp_distrib_rows_ = 10;
 
-		for(i = 0;
-				i < static_cast<int>(hp_prob_vector.size()); i++) {
+			// We store a few of the highest probability hitpoint values.
+			int nb_elem = std::min<int>(max_hp_distrib_rows_, prob_hp_vector.size());
 
-			int hp = hp_prob_vector[i].first;
-			double prob = hp_prob_vector[i].second;
+			for (int j = prob_hp_vector.size() - nb_elem;
+				j < static_cast<int>(prob_hp_vector.size()); ++j) {
 
-			char prob_buf[10];
-			format_prob(prob_buf, prob);
-			char hp_buf[10];
-			format_hp(hp_buf, hp);
+				hp_prob_vector.push_back(std::pair<int, double>
+					(prob_hp_vector[j].second, prob_hp_vector[j].first));
+			}
 
-			SDL_Color prob_color = int_to_color(game_config::blue_to_white(prob * 100.0, true));
+			// Then, we sort the hitpoint values in ascending order.
+			std::sort(hp_prob_vector.begin(), hp_prob_vector.end());
+			// And reverse the order. Might be doable in a better manor.
+			std::reverse(hp_prob_vector.begin(), hp_prob_vector.end());
 
-			str		<< span_color(font::weapon_details_color) << "  " << "  "
-					<< span_color(u->hp_color(hp)) << hp_buf << naps
+			std::ostringstream str(labels[i]);
+
+			for (int j = 0;
+				j < static_cast<int>(hp_prob_vector.size()); ++j) {
+
+				int hp = hp_prob_vector[j].first;
+				double prob = hp_prob_vector[j].second;
+
+				char prob_buf[10];
+				format_prob(prob_buf, prob);
+				char hp_buf[10];
+				format_hp(hp_buf, hp);
+
+				SDL_Color prob_color = int_to_color(game_config::blue_to_white(prob * 100.0, true));
+
+				str << span_color(font::weapon_details_color) << "  " << "  "
+					<< span_color(u_copy.hp_color(hp)) << hp_buf << naps
 					<< " " << font::weapon_numbers_sep << " "
 					<< span_color(prob_color) << prob_buf << naps
 					<< naps << "\n";
+			}
+
+			add_text(res, flush(str), tooltips[i]);
 		}
 
-		add_text(res, flush(str), flush(tooltip));
-	}
-	return res;
+		return res;
+	});
 }
 
-static config unit_weapons(reports::context & rc, const unit *u)
+static boost::future<config> unit_weapons(const reports::context & rc, const unit *u)
 {
-	if (!u || u->attacks().empty()) return config();
+	if (!u || u->attacks().empty()) return boost::make_ready_future(config());
 	map_location displayed_unit_hex = rc.screen().displayed_unit_hex();
 	config res;
 
@@ -995,21 +1033,21 @@ static config unit_weapons(reports::context & rc, const unit *u)
 	{
 		attack_info(rc, at, res, *u, displayed_unit_hex);
 	}
-	return res;
+	return boost::make_ready_future(res);
 }
 REPORT_GENERATOR(unit_weapons, rc)
 {
 	const unit *u = get_visible_unit(rc);
 	if (!u) return config();
 
-	return unit_weapons(rc, u);
+	return unit_weapons(rc, u).get();
 }
-REPORT_GENERATOR(highlighted_unit_weapons, rc)
+REPORT_GENERATOR_ASYNC(highlighted_unit_weapons, rc)
 {
 	const unit *u = get_selected_unit(rc);
 	const unit *sec_u = get_visible_unit(rc);
 
-	if (!u) return config();
+	if (!u) return boost::make_ready_future(config());
 	if (!sec_u || u == sec_u) return unit_weapons(rc, sec_u);
 
 	map_location highlighted_hex = rc.screen().displayed_unit_hex();
@@ -1022,12 +1060,12 @@ REPORT_GENERATOR(highlighted_unit_weapons, rc)
 
 	return unit_weapons(rc, u, attack_loc, sec_u, false);
 }
-REPORT_GENERATOR(selected_unit_weapons, rc)
+REPORT_GENERATOR_ASYNC(selected_unit_weapons, rc)
 {
 	const unit *u = get_selected_unit(rc);
 	const unit *sec_u = get_visible_unit(rc);
 
-	if (!u) return config();
+	if (!u) return boost::make_ready_future(config());
 	if (!sec_u || u == sec_u) return unit_weapons(rc, u);
 
 	map_location highlighted_hex = rc.screen().displayed_unit_hex();
@@ -1094,7 +1132,7 @@ REPORT_GENERATOR(tod_stats, rc)
 	return text_report(text.str(), tooltip.str(), "..schedule");
 }
 
-static config time_of_day_at(reports::context & rc, const map_location& mouseover_hex)
+static config time_of_day_at(const reports::context & rc, const map_location& mouseover_hex)
 {
 	std::ostringstream tooltip;
 	time_of_day tod;
@@ -1142,7 +1180,7 @@ REPORT_GENERATOR(time_of_day, rc)
 	return time_of_day_at(rc, rc.screen().selected_hex());
 }
 
-static config unit_box_at(reports::context & rc, const map_location& mouseover_hex)
+static config unit_box_at(const reports::context & rc, const map_location& mouseover_hex)
 {
 	std::ostringstream tooltip;
 	time_of_day local_tod;
@@ -1566,7 +1604,7 @@ void reports::register_generator(const std::string &name, reports::generator *g)
 	dynamic_generators_[name] = boost::shared_ptr<reports::generator>(g);
 }
 
-config reports::generate_report(const std::string &name, reports::context & rc, bool only_static)
+config reports::generate_report(const std::string &name, const reports::context & rc, bool only_static)
 {
 	if (!only_static) {
 		dynamic_report_generators::const_iterator i = dynamic_generators_.find(name);
@@ -1579,6 +1617,21 @@ config reports::generate_report(const std::string &name, reports::context & rc, 
 	return config();
 }
 
+boost::future<config> reports::generate_report_async(const std::string &name, const reports::context & rc)
+{
+	auto i = asynchronous_generators.find(name);
+	if (i != asynchronous_generators.end())
+	{
+		return i->second(rc);
+	}
+	return boost::make_ready_future(config());
+}
+
+bool reports::is_asynchronous_generator(const std::string &name) const
+{
+	return asynchronous_generators.find(name) != asynchronous_generators.end();
+}
+
 const std::set<std::string> &reports::report_list()
 {
 	if (!all_reports_.empty()) return all_reports_;
@@ -1586,6 +1639,10 @@ const std::set<std::string> &reports::report_list()
 		all_reports_.insert(v.first);
 	}
 	for (const dynamic_report_generators::value_type &v : dynamic_generators_) {
+		all_reports_.insert(v.first);
+	}
+	for (const auto &v : asynchronous_generators)
+	{
 		all_reports_.insert(v.first);
 	}
 	return all_reports_;

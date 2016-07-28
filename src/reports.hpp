@@ -15,12 +15,16 @@
 #ifndef REPORTS_HPP_INCLUDED
 #define REPORTS_HPP_INCLUDED
 
+#define BOOST_THREAD_PROVIDES_FUTURE
+#define BOOST_THREAD_PROVIDES_FUTURE_CONTINUATION
+
 #include "display_context.hpp"
 
 #include <vector>
 
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/thread/future.hpp>
 
 //this module is responsible for outputting textual reports of
 //various game and unit statistics
@@ -49,15 +53,15 @@ public:
 	public:
 		context(const display_context & dc, display & disp, const tod_manager & tod, boost::shared_ptr<wb::manager> wb, boost::optional<events::mouse_handler &> mhb) : dc_(dc), disp_(disp), tod_(tod), wb_(wb), mhb_(mhb) {}
 
-		const std::vector<team> & teams() { return dc_.teams(); }
-		const unit_map & units() { return dc_.units(); }
-		const gamemap & map() { return dc_.map(); }
+		const std::vector<team> & teams() const { return dc_.teams(); }
+		const unit_map & units() const { return dc_.units(); }
+		const gamemap & map() const { return dc_.map(); }
 
-		const display_context & dc() { return dc_; }
-		display & screen() { return disp_; }
-		const tod_manager & tod() { return tod_; }
-		boost::shared_ptr<wb::manager> wb() { return wb_; }
-		boost::optional<events::mouse_handler&> mhb() { return mhb_; }
+		const display_context & dc() const { return dc_; }
+		display & screen() const { return disp_; }
+		const tod_manager & tod() const { return tod_; }
+		boost::shared_ptr<wb::manager> wb() const { return wb_; }
+		boost::optional<events::mouse_handler&> mhb() const { return mhb_; }
 
 	private:
 		const display_context & dc_;
@@ -69,18 +73,21 @@ public:
 
 	struct generator
 	{
-		virtual config generate(context & ct) = 0;
+		virtual config generate(const context & ct) = 0;
 		virtual ~generator() {}
 	};
 
 	void register_generator(const std::string &name, generator *);
 
-	config generate_report(const std::string &name, context & ct, bool only_static = false);
+	config generate_report(const std::string &name, const context & ct, bool only_static = false);
+	boost::future<config> generate_report_async(const std::string &name, const context & ct);
+	bool is_asynchronous_generator(const std::string &name) const;
 
 	const std::set<std::string> &report_list();
 
 
-	typedef config (*generator_function)(reports::context & );
+	typedef config (*generator_function)(const reports::context & );
+	typedef boost::future<config> (*generator_function_async)(const reports::context &);
 	typedef std::map<std::string, boost::shared_ptr<reports::generator> > dynamic_report_generators;
 
 private:

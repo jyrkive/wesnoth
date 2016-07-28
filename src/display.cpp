@@ -48,6 +48,7 @@
 #include "show_dialog.hpp"
 #include "gui/dialogs/loadscreen.hpp"
 
+#include <boost/thread/thread.hpp>
 #include <SDL_image.h>
 
 #ifdef __SUNPRO_CC
@@ -3313,18 +3314,38 @@ void display::refresh_report(std::string const &report_name, const config * new_
 	}
 
 	// Now we will need the config. Generate one if needed.
-
-	boost::optional <events::mouse_handler &> mhb = boost::none;
-
-	if (resources::controller) {
-		mhb = resources::controller->get_mouse_handler_base();
+	config generated_cfg;
+	if (new_cfg == nullptr)
+	{
+		reports_[report_name].status = report_status::generating;
+		if (!reports_object_->is_asynchronous_generator(report_name))
+		{
+			generated_cfg = reports_object_->generate_report(report_name, obtain_report_context());
+			reports_[report_name].is_empty = generated_cfg.empty();
+			item->add_prefix(generated_cfg);
+			item->add_postfix(generated_cfg);
+			new_cfg = &generated_cfg;
+		}
+		else
+		{
+			reports_object_->generate_report_async(report_name, obtain_report_context()).then(
+				[this, report_name, item](boost::future<config> cfg_future)
+			{
+				config cfg = cfg_future.get();
+				reports_[report_name].is_empty = cfg.empty();
+				item->add_prefix(cfg);
+				item->add_postfix(cfg);
+				reports_[report_name].data = cfg;
+				reports_[report_name].status = report_status::generated;
+				trigger_sidebar_redraw();
+			});
+			return;
+		}
 	}
-
-	reports::context temp_context = reports::context(*dc_, *this, *resources::tod_manager, wb_.lock(), mhb);
-
-	const config generated_cfg = new_cfg ? config() : reports_object_->generate_report(report_name, temp_context);
-	if ( new_cfg == nullptr )
-		new_cfg = &generated_cfg;
+	else
+	{
+		reports_[report_name].is_empty = new_cfg->empty();
+	}
 
 	SDL_Rect &rect = reports_[report_name].rect;
 	const SDL_Rect &new_rect = item->location(screen_area());
@@ -3333,6 +3354,7 @@ void display::refresh_report(std::string const &report_name, const config * new_
 
 	// Report and its location is unchanged since last time. Do nothing.
 	if (surf && rect == new_rect && report == *new_cfg) {
+		reports_[report_name].status = report_status::generated;
 		return;
 	}
 
@@ -3379,25 +3401,12 @@ void display::refresh_report_surface(std::string const &report_name)
 
 	tooltips::clear_tooltips(rect);
 
-	if (report.empty()) return;
+	if (reports_[report_name].is_empty)
+	{
+		return;
+	}
 
 	int x = rect.x, y = rect.y;
-
-	// Add prefix, postfix elements.
-	// Make sure that they get the same tooltip
-	// as the guys around them.
-	std::string str = item->prefix();
-	if (!str.empty()) {
-		config &e = report.add_child_at("element", config(), 0);
-		e["text"] = str;
-		e["tooltip"] = report.child("element")["tooltip"];
-	}
-	str = item->postfix();
-	if (!str.empty()) {
-		config &e = report.add_child("element");
-		e["text"] = str;
-		e["tooltip"] = report.child("element", -1)["tooltip"];
-	}
 
 	// Loop through and display each report element.
 	int tallest = 0;
@@ -3787,6 +3796,33 @@ void display::process_reachmap_changes()
 	reach_map_changed_ = false;
 }
 
+reports::context display::obtain_report_context()
+{
+	boost::optional <events::mouse_handler &> mhb = boost::none;
+
+	if (resources::controller) {
+		mhb = resources::controller->get_mouse_handler_base();
+	}
+
+	return reports::context(*dc_, *this, *resources::tod_manager, wb_.lock(), mhb);
+}
+
+void display::trigger_sidebar_redraw()
+{
+	SDL_Event event;
+	SDL_UserEvent data;
+
+	data.type = DRAW_SIDEBAR_EVENT;
+	data.code = 0;
+	data.data1 = nullptr;
+	data.data2 = nullptr;
+
+	event.type = DRAW_SIDEBAR_EVENT;
+	event.user = data;
+
+	SDL_PushEvent(&event);
+}
+
 void display::handle_window_event(const SDL_Event& event) {
 	if (event.type == SDL_WINDOWEVENT) {
 			switch (event.window.event) {
@@ -3808,6 +3844,13 @@ void display::handle_event(const SDL_Event& event) {
 	}
 	if (event.type == DRAW_ALL_EVENT) {
 		draw();
+	}
+	else if (event.type == DRAW_SIDEBAR_EVENT) {
+		for (const std::string& name : reports_object_->report_list()) {
+			if (reports_[name].status == report_status::generated) {
+				refresh_report_surface(name);
+			}
+		}
 	}
 }
 
