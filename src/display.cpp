@@ -54,6 +54,7 @@
 #include <SDL_image.h>
 
 #include <cmath>
+#include <iterator>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -189,6 +190,7 @@ display::display(const display_context * dc, CVideo& video, std::weak_ptr<wb::ma
 	action_buttons_(),
 	invalidated_(),
 	previous_invalidated_(),
+	deferred_invalidated_(),
 	mouseover_hex_overlay_(nullptr),
 	tod_hex_mask1(nullptr),
 	tod_hex_mask2(nullptr),
@@ -2444,6 +2446,7 @@ void display::draw(bool update,bool force) {
 	// not this one, nobody will tell us to redraw (cleanup)
 	previous_invalidated_.swap(invalidated_);
 	invalidated_.insert(previous_invalidated_.begin(),previous_invalidated_.end());
+	limit_invalidated_hexes();
 	// these new invalidations cannot cause any propagation because
 	// if a hex was invalidated last turn but not this turn, then
 	// * case of no unit in neighbor hex=> no propagation
@@ -2459,6 +2462,7 @@ void display::draw(bool update,bool force) {
 		if(!invalidated_.empty() || preferences::show_haloes()) {
 			draw_invalidated();
 			invalidated_.clear();
+			invalidated_.swap(deferred_invalidated_);
 		}
 		drawing_buffer_commit();
 		post_commit();
@@ -3113,6 +3117,18 @@ void display::invalidate_animations()
 		}
 #endif
 	} while (new_inval);
+}
+
+void display::limit_invalidated_hexes()
+{
+	unsigned int limit = preferences::redraw_hex_limit();
+	if(invalidated_.size() <= limit) {
+		return;
+	}
+
+	auto first_skipped_hex = std::next(invalidated_.begin(), limit);
+	deferred_invalidated_.insert(first_skipped_hex, invalidated_.end());
+	invalidated_.erase(first_skipped_hex, invalidated_.end());
 }
 
 void display::add_arrow(arrow& arrow)

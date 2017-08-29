@@ -106,6 +106,9 @@ namespace preferences {
 	int idle_anim_rate();
 	void _set_idle_anim_rate(const int rate);
 
+	int redraw_hex_limit();
+	void set_redraw_hex_limit(const int limit);
+
 	std::string language();
 	void set_language(const std::string& s);
 

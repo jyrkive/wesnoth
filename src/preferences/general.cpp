@@ -471,6 +471,16 @@ void _set_idle_anim_rate(const int rate)
 	prefs["idle_anim_rate"] = rate;
 }
 
+int redraw_hex_limit()
+{
+	return prefs["redraw_hex_limit"].to_int(1000000000);
+}
+
+void set_redraw_hex_limit(const int limit)
+{
+	prefs["redraw_hex_limit"] = limit;
+}
+
 std::string language()
 {
 	return prefs["locale"];

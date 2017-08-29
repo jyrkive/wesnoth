@@ -303,6 +303,9 @@ void preferences_dialog::post_build(window& window)
 		[this](int pos, int /*max*/)->t_string { return lexical_cast<std::string>(accl_speeds_[pos]); }
 	);
 
+	// Set the label for unlimited hexes/frame.
+	find_widget<slider>(&window, "hex_limit_slider", false).set_maximum_value_label(_("Unlimited"));
+
 	/* SKIP AI MOVES */
 	register_bool("skip_ai_moves", true,
 		skip_ai_moves, set_skip_ai_moves);
@@ -401,6 +404,17 @@ void preferences_dialog::post_build(window& window)
 
 	register_integer("idle_anim_frequency", true,
 		idle_anim_rate, set_idle_anim_rate);
+
+	/* MAXIMUM HEXES TO REDRAW PER FRAME */
+	register_integer("hex_limit_slider", true, redraw_hex_limit,
+		[&window](int limit)
+	{
+		const slider& s = find_widget<slider>(&window, "hex_limit_slider", false);
+		if(limit >= s.get_maximum_value()) {
+			limit = 1000000000;
+		}
+		set_redraw_hex_limit(limit);
+	});
 
 	/* FONT SCALING */
 	register_integer("scaling_slider", true,
@@ -959,6 +973,8 @@ void preferences_dialog::pre_show(window& window)
 	});
 
 	gui2::bind_status_label<slider>(&window, "turbo_slider");
+
+	gui2::bind_status_label<slider>(&window, "hex_limit_slider");
 
 	gui2::bind_status_label<slider>(&window, "scaling_slider",   [](slider& s)->std::string {
 		return s.get_value_label() + "%";
