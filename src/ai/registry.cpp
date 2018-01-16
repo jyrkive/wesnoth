@@ -21,7 +21,6 @@
 
 #include "config.hpp"             // for config, operator<<
 #include "terrain/filter.hpp"  // for terrain_filter
-#include "ai/composite/engine.hpp"      // for register_engine_factory
 #include "ai/composite/stage.hpp"       // for ministage, idle_stage, etc
 #include "ai/composite/rca.hpp"
 #include "ai/game_info.hpp"             // for attacks_vector
@@ -37,12 +36,72 @@
 #include "ai/default/ca.hpp"               // for leader_shares_keep_phase, etc
 #include "ai/default/ca_move_to_targets.hpp"
 #include "ai/default/stage_rca.hpp"
+#include "resources.hpp"                   // for resources::lua_kernel
+#include "scripting/game_lua_kernel.hpp"   // for game_lua_kernel
 
+#include <memory>                       // for unique_ptr
 #include <string>                       // for string
 #include <vector>                       // for vector
 
 
 namespace ai {
+template<class ENGINE>
+class register_engine_factory : public engine_factory {
+public:
+	register_engine_factory(const std::string &name)
+		: engine_factory(name)
+	{
+	}
+
+	virtual engine_ptr get_new_instance(readonly_context &ai, const config &cfg){
+		engine_ptr e = engine_ptr(new ENGINE(ai, cfg));
+		if(!e->is_ok()) {
+			return engine_ptr();
+		}
+		return e;
+	}
+
+	virtual engine_ptr get_new_instance(readonly_context &ai, const std::string& name){
+		config cfg;
+		cfg["name"] = name;
+		cfg["engine"] = "cpp"; // @Crab: what is the purpose of this line(neph)
+		return engine_ptr(new ENGINE(ai, cfg));
+	}
+};
+
+template<>
+class register_engine_factory<engine_lua> : public engine_factory{
+public:
+	register_engine_factory(const std::string &name)
+		: engine_factory(name)
+	{
+	}
+
+	virtual engine_ptr get_new_instance(readonly_context &ai, const config &cfg){
+		std::shared_ptr<engine_lua> e(new engine_lua(ai, cfg));
+
+		std::string code = engine_lua::get_engine_code(cfg);
+		// Create a unique_ptr to the same engine
+		// in order to pretend giving its ownership to Lua.
+		std::shared_ptr<lua_ai_context> ai_context(resources::lua_kernel->
+			create_lua_ai_context(code.c_str(), std::unique_ptr<engine_lua>(e.get())));
+
+		e->set_ai_context(ai_context);
+
+		if(!e->is_ok()) {
+			return engine_ptr();
+		}
+		return e;
+	}
+
+	virtual engine_ptr get_new_instance(readonly_context &ai, const std::string& name){
+		config cfg;
+		cfg["name"] = name;
+		cfg["engine"] = "cpp";
+		return get_new_instance(ai, cfg);
+	}
+};
+
 // =======================================================================
 // Engines
 // =======================================================================

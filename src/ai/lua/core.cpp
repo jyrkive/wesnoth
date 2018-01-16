@@ -1012,7 +1012,7 @@ static size_t generate_and_push_ai_state(lua_State* L, ai::engine_lua* engine)
 	return length_ai + 1;
 }
 
-lua_ai_context* lua_ai_context::create(lua_State *L, char const *code, ai::engine_lua *engine)
+lua_ai_context* lua_ai_context::create(lua_State *L, char const *code, std::unique_ptr<ai::engine_lua>&& engine)
 {
 	int res_ai = luaL_loadstring(L, code); // [-1: AI code]
 	if (res_ai != 0)
@@ -1024,13 +1024,14 @@ lua_ai_context* lua_ai_context::create(lua_State *L, char const *code, ai::engin
 		return nullptr;
 	}
 	//push data table here
-	size_t idx = generate_and_push_ai_state(L, engine); // [-1: AI state  -2: AI code]
+	size_t idx = generate_and_push_ai_state(L, engine.get()); // [-1: AI state  -2: AI code]
+	lua_ai_context* context = new lua_ai_context(L, idx, engine->get_readonly_context().get_side());
 	lua_pushvalue(L, -2); // [-1: AI code  -2: AI state  -3: AI code]
 	lua_setfield(L, -2, "update_self"); // [-1: AI state  -2: AI code]
-	lua_pushlightuserdata(L, engine);
+	lua_pushlightuserdata(L, engine.release());
 	lua_setfield(L, -2, "engine"); // [-1: AI state  -2: AI code]
 	lua_pop(L, 2);
-	return new lua_ai_context(L, idx, engine->get_readonly_context().get_side());
+	return context;
 }
 
 void lua_ai_context::update_state()

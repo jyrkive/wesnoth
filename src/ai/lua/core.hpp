@@ -39,7 +39,7 @@ private:
 	lua_ai_context(lua_State *l, int num, int side) : L(l), num_(num), side_(side)
 	{
 	}
-	static lua_ai_context* create(lua_State *L, char const *code, engine_lua *engine);
+	static lua_ai_context* create(lua_State *L, char const *code, std::unique_ptr<engine_lua>&& engine);
 public:
 	~lua_ai_context();
 	void update_state();

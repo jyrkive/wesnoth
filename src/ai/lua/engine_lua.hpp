@@ -69,12 +69,14 @@ public:
 	 */
 	virtual config to_config() const;
 
-// 	/**
-// 	 * Method to inject AI context into the engine.
-// 	 * The context includes all that in necessary for the AI -
-// 	 * , like access to game state and movement/attack routines.
-// 	 */
-// 	virtual void set_ai_context(ai_context *context);
+	static std::string get_engine_code(const config&);
+
+	/**
+	 * Method to inject AI context into the engine.
+	 * The context includes all that in necessary for the AI -
+	 * , like access to game state and movement/attack routines.
+	 */
+	virtual void set_ai_context(std::shared_ptr<lua_ai_context> context);
 
 private:
 
@@ -83,10 +85,11 @@ private:
 	 */
 	std::string code_;
 
+	const config& data_;
+	const config& args_;
+
 	//There is one lua engine per AI. So, it can hold state
 	std::shared_ptr<lua_ai_context> lua_ai_context_;
-
-	std::string get_engine_code(const config&) const;
 
 };
 

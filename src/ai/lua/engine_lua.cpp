@@ -251,21 +251,14 @@ private:
 engine_lua::engine_lua( readonly_context &context, const config &cfg )
 	: engine(context,cfg)
 	, code_(get_engine_code(cfg))
-	, lua_ai_context_(resources::lua_kernel->create_lua_ai_context(
-		get_engine_code(cfg).c_str(), this))
+	, data_(cfg.child_or_empty("data"))
+	, args_(cfg.child_or_empty("args"))
+	, lua_ai_context_()
 {
 	name_ = "lua";
-	config data(cfg.child_or_empty("data"));
-	config args(cfg.child_or_empty("args"));
-
-	if (lua_ai_context_) { // The context might be nullptr if the config contains errors
-		lua_ai_context_->set_persistent_data(data);
-		lua_ai_context_->set_arguments(args);
-		lua_ai_context_->update_state();
-	}
 }
 
-std::string engine_lua::get_engine_code(const config &cfg) const
+std::string engine_lua::get_engine_code(const config &cfg)
 {
 	if (cfg.has_attribute("code")) {
 		return cfg["code"].str();
@@ -396,6 +389,17 @@ config engine_lua::to_config() const
 	}
 
 	return cfg;
+}
+
+void engine_lua::set_ai_context(std::shared_ptr<lua_ai_context> context)
+{
+	lua_ai_context_ = context;
+
+	if (context) {
+		context->set_persistent_data(data_);
+		context->set_arguments(args_);
+		context->update_state();
+	}
 }
 
 #ifdef _MSC_VER

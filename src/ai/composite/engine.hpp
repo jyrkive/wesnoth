@@ -23,8 +23,7 @@
 #include "ai/composite/component.hpp"
 #include "ai/contexts.hpp"
 
-#include <algorithm>
-#include <iterator>
+#include <memory>
 
 //============================================================================
 
@@ -142,31 +141,6 @@ public:
 	}
 
 	virtual ~engine_factory() {}
-};
-
-
-template<class ENGINE>
-class register_engine_factory : public engine_factory {
-public:
-	register_engine_factory( const std::string &name )
-		: engine_factory( name )
-	{
-	}
-
-	virtual engine_ptr get_new_instance( readonly_context &ai, const config &cfg ){
-		engine_ptr e = engine_ptr(new ENGINE(ai,cfg));
-		if (!e->is_ok()) {
-			return engine_ptr();
-		}
-		return e;
-	}
-
-	virtual engine_ptr get_new_instance( readonly_context &ai, const std::string& name ){
-		config cfg;
-		cfg["name"] = name;
-		cfg["engine"] = "cpp"; // @Crab: what is the purpose of this line(neph)
-		return engine_ptr(new ENGINE(ai,cfg));
-	}
 };
 
 } //end of namespace ai

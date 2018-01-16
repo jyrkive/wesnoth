@@ -118,7 +118,7 @@
 #include <new>                          // for operator new
 #include <set>                          // for set
 #include <sstream>                      // for operator<<, basic_ostream, etc
-#include <utility>                      // for pair
+#include <utility>                      // for pair, move
 #include <algorithm>
 #include <vector>                       // for vector, etc
 #include <SDL_timer.h>                  // for SDL_GetTicks
@@ -3453,7 +3453,7 @@ static void push_component(lua_State *L, ai::component* c, const std::string &ct
  * - Arg 1: int
  * - Ret 1: ai table
  */
-static int intf_debug_ai(lua_State *L)
+int game_lua_kernel::intf_debug_ai(lua_State *L)
 {
 	if (!game_config::debug) { // This function works in debug mode only
 		return 0;
@@ -3490,7 +3490,11 @@ static int intf_debug_ai(lua_State *L)
 		ai::ai_context& ai_context = ai_ptr->get_ai_context();
 		config cfg = ai::configuration::get_default_ai_parameters();
 
-		lua_engine = new ai::engine_lua(ai_context, cfg);
+		std::unique_ptr<ai::engine_lua> dummy_engine(new ai::engine_lua(ai_context, cfg));
+		lua_engine = dummy_engine.get();
+		std::string code = ai::engine_lua::get_engine_code(cfg);
+		std::shared_ptr<ai::lua_ai_context> lua_ai_context(create_lua_ai_context(code.c_str(), std::move(dummy_engine)));
+		lua_engine->set_ai_context(lua_ai_context);
 		LOG_LUA << "Created new dummy lua-engine for debug_ai(). \n";
 
 		//and add the dummy engine as a component
@@ -3970,7 +3974,6 @@ game_lua_kernel::game_lua_kernel(game_state & gs, play_controller & pc, reports 
 		{ "copy_unit",                &intf_copy_unit                },
 		{ "create_animator",          &intf_create_animator          },
 		{ "create_unit",              &intf_create_unit              },
-		{ "debug_ai",                 &intf_debug_ai                 },
 		{ "eval_conditional",         &intf_eval_conditional         },
 		{ "get_era",                  &intf_get_era                  },
 		{ "get_traits",               &intf_get_traits               },
@@ -3999,6 +4002,7 @@ game_lua_kernel::game_lua_kernel(game_state & gs, play_controller & pc, reports 
 		{ "clear_messages",            &dispatch<&game_lua_kernel::intf_clear_messages             >        },
 		{ "color_adjust",              &dispatch<&game_lua_kernel::intf_color_adjust               >        },
 		{ "delay",                     &dispatch<&game_lua_kernel::intf_delay                      >        },
+		{ "debug_ai",                  &dispatch<&game_lua_kernel::intf_debug_ai                   >        },
 		{ "end_turn",                  &dispatch<&game_lua_kernel::intf_end_turn                   >        },
 		{ "end_level",                 &dispatch<&game_lua_kernel::intf_end_level                  >        },
 		{ "erase_unit",                &dispatch<&game_lua_kernel::intf_erase_unit                 >        },
@@ -4642,9 +4646,9 @@ std::string game_lua_kernel::apply_effect(const std::string& name, unit& u, cons
 	return descr;
 }
 
-ai::lua_ai_context* game_lua_kernel::create_lua_ai_context(char const *code, ai::engine_lua *engine)
+ai::lua_ai_context* game_lua_kernel::create_lua_ai_context(char const *code, std::unique_ptr<ai::engine_lua>&& engine)
 {
-	return ai::lua_ai_context::create(mState,code,engine);
+	return ai::lua_ai_context::create(mState, code, std::move(engine));
 }
 
 ai::lua_ai_action_handler* game_lua_kernel::create_lua_ai_action_handler(char const *code, ai::lua_ai_context &context)

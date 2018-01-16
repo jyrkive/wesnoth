@@ -18,6 +18,7 @@
 
 #include "game_events/action_wml.hpp"   // for wml_action, etc
 
+#include <memory>                       // for unique_ptr
 #include <stack>
 #include <string>                       // for string
 
@@ -141,6 +142,7 @@ class game_lua_kernel : public lua_kernel_base
 	int intf_match_side(lua_State *L);
 	int intf_set_side_id(lua_State *L);
 	int intf_modify_ai_wml(lua_State *L);
+	int intf_debug_ai(lua_State *L);
 	int intf_get_sides(lua_State* L);
 	int intf_add_tile_overlay(lua_State *L);
 	int intf_remove_tile_overlay(lua_State *L);
@@ -212,7 +214,7 @@ public:
 
 	virtual void log_error(char const* msg, char const* context = "Lua error") override;
 
-	ai::lua_ai_context* create_lua_ai_context(char const *code, ai::engine_lua *engine);
+	ai::lua_ai_context* create_lua_ai_context(char const *code, std::unique_ptr<ai::engine_lua>&& engine);
 	ai::lua_ai_action_handler* create_lua_ai_action_handler(char const *code, ai::lua_ai_context &context);
 
 	void mouse_over_hex_callback(const map_location& loc);
