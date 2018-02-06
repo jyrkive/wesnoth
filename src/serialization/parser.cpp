@@ -701,7 +701,9 @@ static void write_internal(const config& cfg, std::ostream& out, std::string& te
 		throw config::error("Too many recursion levels in config write");
 	}
 
-	for(const config::attribute& i : cfg.attribute_range()) {
+	config::const_attr_itors unordered_attrs = cfg.attribute_range();
+	std::map<std::string, config_attribute_value> attributes(unordered_attrs.begin(), unordered_attrs.end());
+	for(const config::attribute& i : attributes) {
 		if(!config::valid_attribute(i.first)) {
 			ERR_CF << "Config contains invalid attribute name '" << i.first << "', skipping...\n";
 			continue;

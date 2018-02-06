@@ -20,6 +20,7 @@
 
 #include "config.hpp"
 
+#include "config_pool.hpp"
 #include "lexical_cast.hpp"
 #include "log.hpp"
 #include "utils/const_clone.hpp"
@@ -159,8 +160,10 @@ config& config::operator=(const config& cfg)
 		return *this;
 	}
 
-	config tmp(cfg);
-	swap(tmp);
+	clear();
+	values_ = cfg.values_;
+	append_children(cfg);
+
 	return *this;
 }
 
@@ -475,7 +478,7 @@ config& config::add_child(config_key_type key)
 	check_valid();
 
 	child_list& v = map_get(children_, key);
-	v.emplace_back(new config());
+	v.emplace_back(config_pool::allocate());
 	ordered_children.emplace_back(children_.find(key), v.size() - 1);
 	return *v.back();
 }
@@ -485,7 +488,9 @@ config& config::add_child(config_key_type key, const config& val)
 	check_valid(val);
 
 	child_list& v = map_get(children_, key);
-	v.emplace_back(new config(val));
+	auto new_val = config_pool::allocate();
+	*new_val = val;
+	v.emplace_back(std::move(new_val));
 	ordered_children.emplace_back(children_.find(key), v.size() - 1);
 
 	return *v.back();
@@ -496,7 +501,9 @@ config& config::add_child(config_key_type key, config&& val)
 	check_valid(val);
 
 	child_list& v = map_get(children_, key);
-	v.emplace_back(new config(std::move(val)));
+	auto new_val = config_pool::allocate();
+	*new_val = std::move(val);
+	v.emplace_back(std::move(new_val));
 	ordered_children.emplace_back(children_.find(key), v.size() - 1);
 
 	return *v.back();
@@ -511,7 +518,10 @@ config& config::add_child_at(config_key_type key, const config& val, unsigned in
 		throw error("illegal index to add child at");
 	}
 
-	v.emplace(v.begin() + index, new config(val));
+	auto new_val = config_pool::allocate();
+	*new_val = val;
+
+	v.emplace(v.begin() + index, std::move(new_val));
 
 	bool inserted = false;
 
@@ -660,7 +670,7 @@ void config::remove_children(config_key_type key, std::function<bool(const confi
 		return;
 	}
 
-	const auto predicate = [p](const std::unique_ptr<config>& child)
+	const auto predicate = [p](const std::unique_ptr<config, std::function<void(config*)>>& child)
 	{
 		return p(*child);
 	};
@@ -789,7 +799,7 @@ config& config::find_child(config_key_type key, const std::string& name, const s
 	}
 
 	const child_list::iterator j = std::find_if(i->second.begin(), i->second.end(),
-		[&](const std::unique_ptr<config>& pcfg) {
+		[&](const std::unique_ptr<config, std::function<void(config*)>>& pcfg) {
 			const config& cfg = *pcfg;
 			return cfg[name] == value;
 		}
@@ -1326,7 +1336,7 @@ bool config::validate_wml() const
 	{
 		return valid_tag(pair.first) &&
 			std::all_of(pair.second.begin(), pair.second.end(),
-			[](const std::unique_ptr<config>& c) { return c->validate_wml(); });
+			[](const std::unique_ptr<config, std::function<void(config*)>>& c) { return c->validate_wml(); });
 	});
 }
 

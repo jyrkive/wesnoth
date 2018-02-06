@@ -36,6 +36,7 @@
 #include <iterator>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <type_traits>
@@ -80,6 +81,27 @@ using config_key_type = boost::string_ref;
 #endif
 #else
 using config_key_type = const std::string &;
+#endif
+
+#ifdef USE_HETEROGENOUS_LOOKUPS
+namespace std
+{
+// Specialization of std::hash to allow using config_key_type as a key
+// in std::unordered_map.
+template<> struct hash<config_key_type>
+{
+	size_t operator()(config_key_type key) const
+	{
+		// Fowler-Noll-Vo hash function, FNV-1a variant, configured for 32-bit hashes
+		size_t hash = 2166136261u;
+		for(char c : key) {
+			hash ^= c;
+			hash *= 16777619u;
+		}
+		return hash;
+	}
+};
+}
 #endif
 
 class config;
@@ -141,7 +163,7 @@ public:
 	explicit operator bool() const
 	{ return this != &invalid; }
 
-	typedef std::vector<std::unique_ptr<config>> child_list;
+	typedef std::vector<std::unique_ptr<config, std::function<void(config*)>>> child_list;
 	typedef std::map<std::string, child_list
 #ifdef USE_HETEROGENOUS_LOOKUPS
 		, std::less<>
@@ -247,13 +269,7 @@ public:
 	 */
 	using attribute_value = config_attribute_value;
 
-	typedef std::map<
-		std::string
-		, attribute_value
-#ifdef USE_HETEROGENOUS_LOOKUPS
-		, std::less<>
-#endif
-	> attribute_map;
+	typedef std::unordered_map<std::string, attribute_value> attribute_map;
 	typedef attribute_map::value_type attribute;
 	struct const_attribute_iterator;
 
